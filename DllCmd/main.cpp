@@ -32,8 +32,9 @@ private:
 
 void write_error( const char *custom_err) {
 	FILE *f;
+	DWORD err = GetLastError();
 	fopen_s(&f, "C:\\Windows\\Temp\\err.txt", "wb");
-	fprintf(f, "ERROR: %d", GetLastError());
+	fprintf(f, "ERROR: %d/n", err);
 	if(custom_err != NULL)
 		fprintf(f, "MSG: %s", custom_err);
 	fclose(f);
@@ -54,7 +55,7 @@ DWORD get_session_id() {
 		session_id = strtoul(session_buf, nullptr, 0);
 		remove(filename);
 	} else {
-		write_error(0);
+		write_error("Unable to get session id.");
 	}
 
 	return session_id;
@@ -65,27 +66,25 @@ int main(int argc, char* argv[]) {
 	const char *cmd = "cmd.exe";
 
 	DWORD session_id = get_session_id();
-	if(session_id == -1)
-		return 1;
-
+	
 	ScopedHandle token;
 	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, token.ptr()))
 	{
 		write_error("Open Token Failed.");
-		return E_FAIL;
+		//return E_FAIL;
 	}
 
 	ScopedHandle dup_token;
 	if (!DuplicateTokenEx(token.get(), TOKEN_ALL_ACCESS, nullptr, SecurityAnonymous, TokenPrimary, dup_token.ptr()))
 	{
 		write_error("Duplicate Token Failed.");
-		return E_FAIL;
+		//return E_FAIL;
 	}
 
 	if (!SetTokenInformation(dup_token.get(), TokenSessionId, &session_id, sizeof(session_id)))
 	{
 		write_error("Set Token Info Failed.");
-		return E_FAIL;
+		//return E_FAIL;
 	}
 
 	STARTUPINFO start_info = {};
@@ -93,8 +92,12 @@ int main(int argc, char* argv[]) {
 	start_info.lpDesktop = (LPSTR)"WinSta0\\Default";
 
 
-	DWORD ret = CreateProcessAsUser(dup_token.get(), nullptr, (LPSTR)cmd, nullptr,
-		nullptr, FALSE, CREATE_NEW_CONSOLE, nullptr, nullptr, &start_info, (LPPROCESS_INFORMATION)zeros);
+	if (!CreateProcessAsUser(dup_token.get(), nullptr, (LPSTR)cmd, nullptr,
+		nullptr, FALSE, CREATE_NEW_PROCESS_GROUP | CREATE_NEW_CONSOLE | CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &start_info, (LPPROCESS_INFORMATION)zeros))
+	{
+		write_error("Failed to create process.");
+		return E_FAIL;
+	}
 	
 
 	//// Start the child process. 
